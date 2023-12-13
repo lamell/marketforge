@@ -1,3 +1,34 @@
+/*
+*
+* Comp Board Used:
+*   - Kelly Instruments Horiz24 Bd: BLDC_6_Step_Hall_Sensor_IRAMY20UP60B_2_Layer_v3_Mfct_210723
+*
+* VFD Module used:
+*   - NEC FC20X2J
+*
+* VFD 
+* Module Connector     Comp Connector     Signal Name
+* P2-1                  +5V               +5V Dig
+* P2-2                  GND               Gnd Dig
+* P3-33                 PL1-7             Comp TX on Serial Port 3
+*
+* MAX31865
+* 1                     PL2-2             +5V
+* 2                     PL2-1             GND
+* 3                     N.C.              +3.3V, not used unless system is 3.3V
+* 4                     PL2-8             CLCK
+* 5                     PL2-5             SDO
+* 6                     PL2-6             SDI
+* 7                     PL2-4             CS
+* 8                     N.C.              DRDY, when donde converting signals this pin. Not needed.
+*
+* Pressure Sensor. eBay 30PSI. Needs +5V, analog volt out. 0 PSI -> 0.5V, 30 PSI -> 4.5V
+* RED                   +5V               Hardwired on board
+* BLACK                 GND                 "         "
+* GREEN                 U4-1 (R23-R15)    SIG - Analog voltage out
+*
+*/
+
 #include <Arduino.h>
 #include <Adafruit_MAX31865.h> 
 #include <vfd_nec_fc20x2.h>
@@ -70,12 +101,12 @@ uint16_t Seconds, Minutes, Hours;
 #define BTN_STOP  PIN_PA5
 
 //Vent Solenoid
-#define VENT_SOLENOID PIN_PA2
+#define VENT_SOLENOID PIN_PA2 //White
 #define VALVE_OPEN    1
 #define VALVE_CLOSE   0
 
 //Heater 
-#define HEATER1       PIN_PA4
+#define HEATER1       PIN_PA4 //Green
 #define HEATER_ENABLE PIN_PA6
 #define HEATER_ON     1
 #define HEATER_OFF    0
@@ -93,6 +124,8 @@ uint16_t Seconds, Minutes, Hours;
 #define LED_ON  1
 #define LED_OFF 0
 #define LED_OC  PIN_PL7
+#define HEATER_LED  LED0
+#define VALVE_LED   LED7
 
 //PID
 #define PID_OUT_LIM_LOW   0
@@ -133,7 +166,7 @@ void Read_EEPROM(void) {
   ee_position += sizeof(EE_Derivative);
 
   EEPROM.get(ee_position, EE_Temp_Cor_Factor);
-  Factor_Corr_Temp = EE_Temp_Cor_Factor = 1.0;
+  Factor_Corr_Temp = EE_Temp_Cor_Factor = 1.043;
   ee_position += sizeof(EE_Temp_Cor_Factor);
 
   EEPROM.get(ee_position, EE_Pres_Cor_Fctr);
@@ -209,6 +242,22 @@ void Read_Pressure(void) {
   Pressure = (7.5 * avgVolts.GetAverage()) - 3.9; 
   Pressure = (1.044227 * Pressure) + 0.061628;
   Pressure = Factor_Corr_Press * Pressure;
+}
+
+void Read_Temperature() {
+  ////Read MAX31865
+  uint16_t getMAX31865 = tempSensor.readRTD();
+  // float    ratio = getMAX31865;
+  // ratio /= 32768;
+  // float   Resistance = 0.0;
+  // Resistance = RREF * ratio;
+  avgTemp.Insert(tempSensor.temperature(RNOMINAL, RREF));
+  Temperature = avgTemp.GetAverage();
+
+  // Temperature = (1.0528 * Temperature) + 0.7994;
+  Temperature = (-0.0003099*pow(Temperature,2)) + (1.1137543*Temperature) - 1.2987112;
+  Temperature *= Factor_Corr_Temp;
+
 }
 
 void Standby(void) {
@@ -429,14 +478,7 @@ void loop() {
   Read_Pressure();
 
 
-  ////Read MAX31865
-  uint16_t getMAX31865 = tempSensor.readRTD();
-  float    ratio = getMAX31865;
-  ratio /= 32768;
-  float   Resistance = 0.0;
-  Resistance = RREF * ratio;
-  avgTemp.Insert(tempSensor.temperature(RNOMINAL, RREF));
-  Temperature = avgTemp.GetAverage();
+  Read_Temperature();
 
   // char fValue[10];
   // dtostrf(avgVolts.GetAverage(), 5, 3, fValue);
@@ -487,6 +529,8 @@ void loop() {
     // digitalWrite(HEATER3, HEATER_OFF);
     digitalWrite(HEATER_ENABLE, HEATER_OFF);
     
+    digitalWrite(HEATER_LED, digitalRead(HEATER1));
+
     InCycle = false;
 
     vfd.Print("CICLO INTERRUMPIDO  ", 0);
@@ -536,6 +580,7 @@ void loop() {
   }
 
 
-
+  digitalWrite(HEATER_LED, digitalRead(HEATER1));
+  digitalWrite(VALVE_LED, digitalRead(VENT_SOLENOID));
 }
 
