@@ -469,11 +469,15 @@ void setup() {
   //Load settings form EEPROM
   Read_EEPROM();
 
+  timer1Sec.start();
+
 }
 
 void loop() {
   char txt[50];
 
+  timer1Sec.update();
+  
   //Get the pressure sensor
   Read_Pressure();
 
@@ -560,6 +564,7 @@ void loop() {
     Seconds = 0;
   }
 
+  vfd.CursorOff();
   //Selecte function to use depending on state
   switch (state) {
     case ready:
