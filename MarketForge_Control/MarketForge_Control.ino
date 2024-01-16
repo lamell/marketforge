@@ -90,7 +90,7 @@ int MinutesSetpoint;
 char Disp[21]; //For VFD text
 
 uint16_t ticksSeconds;
-uint16_t Seconds, Minutes, Hours;
+int Seconds, Minutes, Hours;
 
 
 #define   RREF      430.0
@@ -127,6 +127,13 @@ uint16_t Seconds, Minutes, Hours;
 #define HEATER_LED  LED0
 #define VALVE_LED   LED7
 
+#define LED_START PIN_PA7
+#define LED_START_ON  1
+#define LED_START_OFF 0
+#define LED_STOP  PIN_PG2
+#define LED_STOP_ON   1
+#define LED_STOP_OFF  0
+
 //PID
 #define PID_OUT_LIM_LOW   0
 #define PID_OUT_LIM_HIGH  100
@@ -154,11 +161,11 @@ void Read_EEPROM(void) {
   ee_position += sizeof(EE_Setpoint);
 
   EEPROM.get(ee_position, EE_Proportional);
-  Kp = EE_Proportional = 20.0;
+  Kp = EE_Proportional = 5.0;
   ee_position += sizeof(EE_Proportional);
 
   EEPROM.get(ee_position, EE_Integral);
-  Ki = EE_Integral = 0.08;
+  Ki = EE_Integral = 0.008;
   ee_position += sizeof(EE_Integral);
 
   EEPROM.get(ee_position, EE_Derivative);
@@ -180,6 +187,7 @@ void Read_EEPROM(void) {
   EEPROM.get(ee_position, EE_Open_Valve_At_End_Of_Cycle);
 
   pid.setGains(Kp,Ki,Kd);
+  pid.setBangBang(Setpoint - 5.0);
 }
 
 void Write_EEPROM(void) {
@@ -303,6 +311,7 @@ void Heating(void) {
   if (Temperature >=97.0) {
     digitalWrite(VENT_SOLENOID,VALVE_CLOSE);
   }
+
 }
 
 void Sterilizing(void) {
@@ -357,6 +366,7 @@ void Cooling(void) {
   if (Temperature < 102.0) {
     digitalWrite(VENT_SOLENOID, VALVE_OPEN);
   } 
+
 }
 
 void tickHeater(void) {
@@ -410,11 +420,34 @@ void tick1Sec(void) {
   } else {
     // Seconds = 0;
   }
+
+  switch (state) {
+    case ready:
+      digitalWrite(LED_STOP, LED_STOP_ON);
+      digitalWrite(LED_START, LED_START_OFF);
+      break;
+    case heating:
+      digitalWrite(LED_STOP, LED_STOP_OFF);
+      digitalWrite(LED_START, !digitalRead(LED_START));
+      break;
+    case sterilizing:
+      digitalWrite(LED_STOP, LED_STOP_OFF);
+      digitalWrite(LED_START, LED_START_ON);
+      break;
+    case cooling:
+      digitalWrite(LED_STOP, !digitalRead(LED_STOP));
+      digitalWrite(LED_START, LED_START_OFF);
+      break;
+    default:
+      digitalWrite(LED_STOP, LED_STOP_ON);
+      digitalWrite(LED_START, LED_START_OFF);
+  }
 }
 
 //Tickers Timers 
 Ticker  timer1Sec(&tick1Sec, 1000, 0, MILLIS);
-Ticker  timer50mSec(&tickHeater, 50, 0, MILLIS);
+//Ticker  timer50mSec(&tickHeater, 50, 0, MILLIS);
+Ticker  timerHeater_1Sec(&tickHeater, 100, 0, MILLIS);
 
 
 void setup() {
@@ -446,6 +479,10 @@ void setup() {
   digitalWrite(LED5, LED_OFF);
   digitalWrite(LED6, LED_OFF);
   digitalWrite(LED7, LED_OFF);
+  digitalWrite(LED_START, LED_START_OFF);
+  digitalWrite(LED_STOP, LED_STOP_OFF);
+  pinMode(LED_START,OUTPUT);
+  pinMode(LED_STOP,OUTPUT);
 
   //Initialize Vent Solenoid
   pinMode(VENT_SOLENOID,OUTPUT);
@@ -503,7 +540,7 @@ void loop() {
   //delay(100);
   
   timer1Sec.update();
-  timer50mSec.update();
+  timerHeater_1Sec.update();
 
   // digitalWrite(LED5, !digitalRead(LED5));
   if ((digitalRead(BTN_START) == 0) && (state == ready)) {
@@ -518,7 +555,7 @@ void loop() {
     InCycle = true;
 
     digitalWrite(HEATER_ENABLE, HEATER_ON);
-    timer50mSec.start();
+    timerHeater_1Sec.start();
   }
 
   //if ((digitalRead(BTN_STOP) == 0) && (state == heating || state == sterilizing || state == cooling)) {
@@ -526,7 +563,7 @@ void loop() {
     state = ready;
     digitalWrite(VENT_SOLENOID,VALVE_OPEN);
     
-    timer50mSec.stop();
+    timerHeater_1Sec.stop();
     digitalWrite(LED6,LED_OFF);
     digitalWrite(HEATER1, HEATER_OFF);
     // digitalWrite(HEATER2, HEATER_OFF);
@@ -537,8 +574,8 @@ void loop() {
 
     InCycle = false;
 
-    vfd.Print("CICLO INTERRUMPIDO  ", 0);
-    vfd.Print("POR USUARIO         ", 20);
+    vfd.Print((char*)"CICLO INTERRUMPIDO  ", 0);
+    vfd.Print((char*)"POR USUARIO         ", 20);
     uint32_t tstart= millis();
     while((millis()-tstart) < 5000) {
       //
@@ -555,7 +592,7 @@ void loop() {
 
   if (state == sterilizing && (Seconds >= (MinutesSetpoint * 60))) {
     state = cooling;
-    // timer50mSec.stop();
+    // timerHeater_1Sec.stop();
     Seconds = 0;
   }
 

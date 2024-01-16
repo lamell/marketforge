@@ -46,7 +46,7 @@ private:
     T Average;
     
     unsigned int NextElement;
-    unsigned char MaxLength;
+    unsigned int MaxLength;
 public:
     /** Create  moving average
      * @param maxLength is length of moving average
